@@ -1,5 +1,5 @@
 import * as anchor from '@project-serum/anchor';
-import { Program } from '@project-serum/anchor';
+import { AnchorError, Program } from '@project-serum/anchor';
 import { AnchorTicTacToe } from '../target/types/anchor_tic_tac_toe';
 import { expect } from 'chai';
 
@@ -23,7 +23,7 @@ async function play(
 
     const gameState = await program.account.game.fetch(game);
 
-	// console.log(gameState.turn, gameState.state, gameState.board, expectedBoard);
+    // console.log(gameState.turn, gameState.state, gameState.board, expectedBoard);
     expect(gameState.turn).to.equal(expectedTurn);
     expect(gameState.state).to.eql(expectedGameState);
     expect(gameState.board).to.eql(expectedBoard);
@@ -161,8 +161,8 @@ describe('anchor_tic_tac_toe', () => {
         );
     });
 
-	it('players tie!', async () => {
-		const gameKeypair = anchor.web3.Keypair.generate();
+    it('players tie!', async () => {
+        const gameKeypair = anchor.web3.Keypair.generate();
         const playerOne = (program.provider as anchor.AnchorProvider).wallet;
         const playerTwo = anchor.web3.Keypair.generate();
 
@@ -258,7 +258,7 @@ describe('anchor_tic_tac_toe', () => {
             ]
         );
 
-		await play(
+        await play(
             program,
             gameKeypair.publicKey,
             playerTwo,
@@ -272,7 +272,7 @@ describe('anchor_tic_tac_toe', () => {
             ]
         );
 
-		await play(
+        await play(
             program,
             gameKeypair.publicKey,
             playerOne,
@@ -286,7 +286,7 @@ describe('anchor_tic_tac_toe', () => {
             ]
         );
 
-		await play(
+        await play(
             program,
             gameKeypair.publicKey,
             playerTwo,
@@ -300,7 +300,7 @@ describe('anchor_tic_tac_toe', () => {
             ]
         );
 
-		await play(
+        await play(
             program,
             gameKeypair.publicKey,
             playerOne,
@@ -313,5 +313,104 @@ describe('anchor_tic_tac_toe', () => {
                 [{ x: {} }, { o: {} }, { o: {} }]
             ]
         );
-	})
+    });
+
+    it('handles errors', async () => {
+        const gameKeypair = anchor.web3.Keypair.generate();
+        const playerOne = (program.provider as anchor.AnchorProvider).wallet;
+        const playerTwo = anchor.web3.Keypair.generate();
+
+        await program.methods
+            .setupGame(playerTwo.publicKey)
+            .accounts({
+                game: gameKeypair.publicKey,
+                playerOne: playerOne.publicKey
+            })
+            .signers([gameKeypair])
+            .rpc();
+
+        let gameState = await program.account.game.fetch(gameKeypair.publicKey);
+        expect(gameState.turn).to.equal(1);
+        expect(gameState.players).to.eql([
+            playerOne.publicKey,
+            playerTwo.publicKey
+        ]);
+        expect(gameState.state).to.eql({ active: {} });
+        expect(gameState.board).to.eql([
+            [null, null, null],
+            [null, null, null],
+            [null, null, null]
+        ]);
+
+        try {
+            await play(
+                program,
+                gameKeypair.publicKey,
+                playerOne,
+                { row: 0, column: 5 }, // ERROR: out of bounds row
+                1,
+                { active: {} },
+                [
+                    [null, { x: {} }, null],
+                    [null, null, null],
+                    [null, null, null]
+                ]
+            );
+            // we use this to make sure we definitely throw an error
+            chai.assert(false, "should've failed but didn't ");
+        } catch (_err) {
+            expect(_err).to.be.instanceOf(AnchorError);
+            const err: AnchorError = _err;
+            expect(err.error.errorCode.code).to.equal("TileOutOfBounds");
+        }
+
+		await play(
+			program,
+			gameKeypair.publicKey,
+			playerOne, // ERROR: same player in subsequent turns
+
+			// change sth about the tx because
+			// duplicate tx that come in too fast
+			// after each other may get dropped
+			{ row: 0, column: 0 },
+			2,
+			{ active: {} },
+			[
+				[{ x: {} }, null, null],
+				[null, null, null],
+				[null, null, null]
+			]
+		);
+
+        try {
+            await play(
+                program,
+                gameKeypair.publicKey,
+                playerOne, // ERROR: same player in subsequent turns
+
+                // change sth about the tx because
+                // duplicate tx that come in too fast
+                // after each other may get dropped
+                { row: 1, column: 1 },
+                3,
+                { active: {} },
+                [
+                    [{ x: {} }, { x: {} }, null],
+                    [null, null, null],
+                    [null, null, null]
+                ]
+            );
+            chai.assert(false, "should've failed but didn't ");
+        } catch (_err) {
+            expect(_err).to.be.instanceOf(AnchorError);
+            const err: AnchorError = _err;
+            expect(err.error.errorCode.code).to.equal('NotPlayersTurn');
+            expect(err.error.errorCode.number).to.equal(6003);
+            expect(err.program.equals(program.programId)).is.true;
+            expect(err.error.comparedValues).to.deep.equal([
+                playerTwo.publicKey,
+                playerOne.publicKey
+            ]);
+        }
+    });
 });
