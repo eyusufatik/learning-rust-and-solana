@@ -1,1 +1,1 @@
-# learning-rust
+# learning-rust-and-solana
