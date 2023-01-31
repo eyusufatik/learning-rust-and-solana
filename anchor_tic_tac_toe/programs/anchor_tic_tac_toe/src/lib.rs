@@ -166,7 +166,7 @@ impl Game {
         // if we reach here and nobody won,
         // ninth turn has been played and
         // still nobody won
-        if self.turn == 8 {
+        if self.turn == 9 {
             self.state = GameState::Tie;
             return;
         }
